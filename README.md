@@ -1,4 +1,4 @@
-# 1:10000 Chance to get Jumpscared by Withered Foxy, thrughout your Operating System!
+# 1:10000 Chance every second to get Jumpscared by Withered Foxy, thrughout your Operating System!
 
 ## How to use
 
