@@ -2,7 +2,7 @@
 
 ## How to use
 
-- Download a the Latest Release, and Unzip it anywhere!
+- Download a the [Latest Release](https://github.com/FuroFloof/MSC_WitheredFoxyJumpscare/releases/tag/Release), and Unzip it anywhere!
 - Double-Click on Bullshit.exe (Excellent name, i know)
 - Done! This will automatically start with your computer forever, untill you uninstall it!
 
