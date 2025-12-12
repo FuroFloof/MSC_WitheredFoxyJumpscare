@@ -21,13 +21,36 @@ except ImportError:
 # CONFIG
 # =========================
 
-
-ROLL_MAX = 10000
+ROLL_MAX = 10000  # test value
 
 GREEN_MIN = 80       # minimum G value to count as "maybe green"
 GREEN_DIFF = 30      # how much higher G must be than R and B
 
 STARTUP_VBS_NAME = "FoxyJumpscare.vbs"
+
+# Are we running with an attached console?
+IS_CONSOLE = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+# Log file path (next to script/exe)
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+LOG_PATH = os.path.join(BASE_DIR, "bullshit_log.txt")
+
+
+def log(msg: str):
+    """Log to file and to console if present."""
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
+    if IS_CONSOLE:
+        print(msg)
+        sys.stdout.flush()
 
 
 # =========================
@@ -77,8 +100,9 @@ def ensure_startup_vbs():
     try:
         with open(vbs_path, "w", encoding="utf-8") as f:
             f.write(vbs_content)
-    except Exception:
-        pass
+        log(f"Created startup VBS at: {vbs_path}")
+    except Exception as e:
+        log(f"Failed to create startup VBS: {e}")
 
 
 # =========================
@@ -142,6 +166,8 @@ class JumpscareWindow(QWidget):
         """
         Start playback: make fullscreen, click-through, then start video+audio.
         """
+        log("JumpscareWindow.start called")
+
         screen = QApplication.primaryScreen()
         if screen is not None:
             self.setGeometry(screen.geometry())
@@ -154,6 +180,7 @@ class JumpscareWindow(QWidget):
 
         self.cap = cv2.VideoCapture(self.video_path)
         if not self.cap.isOpened():
+            log(f"Failed to open video: {self.video_path}")
             self.cleanup()
             return
 
@@ -194,13 +221,12 @@ class JumpscareWindow(QWidget):
 
         pixmap = pixmap.scaled(
             self.size(),
-            Qt.IgnoreAspectRatio,          
-            Qt.SmoothTransformation        
+            Qt.IgnoreAspectRatio,
+            Qt.SmoothTransformation
         )
 
         self.label.setPixmap(pixmap)
         self.label.resize(self.size())
-
 
     def _apply_chroma_key(self, frame):
         """
@@ -217,12 +243,13 @@ class JumpscareWindow(QWidget):
 
         return rgba
 
-
     def _end_video(self):
         """
         Called when video finishes or fails.
         Hide frame, then close window and clean up.
         """
+        log("Ending jumpscare")
+
         if self.timer is not None:
             self.timer.stop()
             self.timer = None
@@ -247,6 +274,7 @@ class JumpscareWindow(QWidget):
         """
         In case of early failure.
         """
+        log("JumpscareWindow.cleanup called")
         if self.cap is not None:
             self.cap.release()
             self.cap = None
@@ -283,14 +311,18 @@ class AppController(QObject):
 
         self.forceTriggerRequested.connect(self.trigger_jumpscare)
 
-        if keyboard is not None:
+        # Only use keyboard global hotkey in console/dev mode
+        if IS_CONSOLE and keyboard is not None:
             try:
                 keyboard.add_hotkey("ctrl+alt+shift+j", self._on_hotkey)
-                print("Hotkey registered: CTRL+ALT+SHIFT+J (force jumpscare)")
+                log("Hotkey registered: CTRL+ALT+SHIFT+J (force jumpscare)")
             except Exception as e:
-                print(f"Failed to register hotkey: {e}")
+                log(f"Failed to register hotkey: {e}")
+        elif IS_CONSOLE:
+            log("keyboard module not available, no global hotkey")
         else:
-            print("keyboard module not available, no global hotkey")
+            # No console: skip keyboard completely for stability
+            log("No console detected, skipping global hotkey registration")
 
     def _on_hotkey(self):
         self.forceTriggerRequested.emit()
@@ -298,8 +330,7 @@ class AppController(QObject):
     def _tick(self):
         roll = random.randint(1, ROLL_MAX)
 
-        print(f"Roll: {roll}")
-        sys.stdout.flush()
+        log(f"Roll: {roll}")
 
         if roll == 1:
             self.trigger_jumpscare()
@@ -308,14 +339,14 @@ class AppController(QObject):
         if self.current_jumpscare is not None:
             return
 
-        print("Triggering jumpscare")
-        sys.stdout.flush()
+        log("Triggering jumpscare")
 
         win = JumpscareWindow(self.video_path)
         self.current_jumpscare = win
 
         def on_destroyed():
             self.current_jumpscare = None
+            log("Jumpscare window destroyed")
 
         win.destroyed.connect(on_destroyed)
         win.start()
@@ -326,15 +357,27 @@ class AppController(QObject):
 # =========================
 
 def main():
+    log("Bullshit daemon starting")
     ensure_startup_vbs()
 
     video_path = resource_path(os.path.join("assets", "jump.mp4"))
+    log(f"Video path resolved to: {video_path}")
 
     app = QApplication(sys.argv)
 
     controller = AppController(video_path)
-    sys.exit(app.exec())
+    return app.exec()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        rc = main()
+        log(f"Bullshit daemon exited with code {rc}")
+    except Exception as e:
+        # Log any unexpected fatal error so no console build is not completely blind
+        import traceback
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        log("FATAL ERROR:\n" + tb)
+        # Re-raise in console mode so you still see it
+        if IS_CONSOLE:
+            raise
